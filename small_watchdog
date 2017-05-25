@@ -1,0 +1,79 @@
+#!/bin/bash
+
+
+#SMALL_WATCHDOG: writes top six parameters to a CSV file 
+# every 60 seconds, and every 15 minutes it compresses and sends that 
+# CSV file to a master machine, and indoing so creating a new 
+# CSV file with the time stamp in UTC. 
+
+
+SMALL_PATH='/root/TEC/SmallParams/'
+SMALL_INTERVAL=60
+SMALL_GETS_PER_FILE=15
+BZIP='.bz2'
+
+JEMEUSO="jemeuso"
+DP_CPU="192.168.1.20"
+DP_CPU_LOGPATH="acquisition/rawnew/check/"
+
+i=0
+while :
+do
+# i will equal 0 at the beginning of the script and just after 
+# a file has been sent to 192.168.1.20. In either case, i = 0 
+# means we need to create a new file. 
+if [ $i -eq 0 ]; then
+
+#grab the date. This is a string. 
+DATE_EXTENSION=`date +%Y_%m_%d_%H_%M_%S`
+DP_CPU_TEMPPATH="acquisition/run/ucirc-small-status-"$DATE_EXTENSION"/"
+
+SMALL_DATE=$(date)
+
+#Parse the date into a filename string. 
+# substring syntax: ${ string: starting index : substring length }
+SMALL_FILETEMPLATE="SmallParams_${SMALL_DATE:0:3}_${SMALL_DATE:4:3}_${SMALL_DATE:8:2}_${SMALL_DATE:11:2}_${SMALL_DATE:14:2}_${SMALL_DATE:17:2}_${SMALL_DATE:24:4}"
+SMALL_FILENAME1=$SMALL_FILETEMPLATE"_1.csv"
+SMALL_FILENAME2=$SMALL_FILETEMPLATE"_2.csv"
+SMALL_FULLPATH1=$SMALL_PATH$SMALL_FILENAME1
+SMALL_FULLPATH2=$SMALL_PATH$SMALL_FILENAME2
+fi
+
+#very easy to execute commands. Just like terminal. 
+./WriteTopLevelParams 1 $SMALL_FULLPATH1
+./WriteTopLevelParams 2 $SMALL_FULLPATH2
+
+
+#increment i
+i=$((i+1))
+
+# Boolean condition. There NEEDS to be space betwen '[' and '$i', and between 
+# 'E' and ']'
+if [ $i -eq $SMALL_GETS_PER_FILE ]; then
+ 
+  bzip2 $SMALL_FULLPATH1
+  bzip2 $SMALL_FULLPATH2
+  SMALL_FULLPATH1=$SMALL_FULLPATH1$BZIP
+  SMALL_FULLPATH2=$SMALL_FULLPATH2$BZIP
+  SMALL_FILENAME1=$SMALL_FILENAME1$BZIP
+  SMALL_FILENAME2=$SMALL_FILENAME2$BZIP
+
+    #Create the directory if necessary
+  ssh $JEMEUSO@$DP_CPU mkdir -p $DP_CPU_TEMPPATH
+
+  #send the files to 192.168.1.20
+  scp $SMALL_FULLPATH1 $JEMEUSO@$DP_CPU:$DP_CPU_TEMPPATH/$SMALL_FILENAME1
+  scp $SMALL_FULLPATH2 $JEMEUSO@$DP_CPU:$DP_CPU_TEMPPATH/$SMALL_FILENAME2
+  rm $SMALL_FULLPATH1
+  rm $SMALL_FULLPATH2
+
+  ssh $JEMEUSO@$DP_CPU mkdir -p $DP_CPU_LOGPATH
+  ssh $JEMEUSO@$DP_CPU mv $DP_CPU_TEMPPATH $DP_CPU_LOGPATH
+
+  i=0
+fi
+
+#bash syntax for sleeping: $INTERVAL is in seconds. 
+sleep $SMALL_INTERVAL
+done
+

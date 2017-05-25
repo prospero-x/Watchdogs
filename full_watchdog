@@ -1,0 +1,86 @@
+#!/bin/bash
+# FULL_WATCHDOG: # Writes the parameters of the TEC to a file 
+# every 30 minutes (1800 seconds). If a file
+# has been written to 6 times (3 hours), that file
+# is sent to 192.168.1.20 sand a new file
+# is created. The filename indicates the time at 
+# which it was created. 
+
+
+
+TEC_PATH='/root/TEC/LargeParams/'
+INTERVAL=1800
+GETS_PER_FILE=6
+BZIP='.bz2'
+
+JEMEUSO="jemeuso"
+DP_CPU="192.168.1.20"
+DP_CPU_LOGPATH="acquisition/rawnew/ucirc/"
+
+
+
+i=0
+while : 
+do
+# i will equal 0 at the beginning of the script and just after 
+# a file has been sent to 192.168.1.20. In either case, i = 0 
+# means we need to create a new file. 
+if [ $i -eq 0 ]; then
+
+DATE_EXTENSION=`date +%Y_%m_%d_%H_%M_%S`
+DP_CPU_TEMPPATH="acquisition/run/ucirc-large-status-"$DATE_EXTENSION"/"
+
+#grab the date. This is a string. 
+DATE=$(date)
+
+#Parse the date into a filename string. 
+# substring syntax: ${ string: starting index : substring length }
+FILETEMPLATE="LargeParams_${DATE:0:3}_${DATE:4:3}_${DATE:8:2}_${DATE:11:2}_${DATE:14:2}_${DATE:17:2}_${DATE:24:4}"
+
+# Bash syntax for string concatenation 
+FILENAME1=$FILETEMPLATE"_1.csv"
+FILENAME2=$FILETEMPLATE"_2.csv"
+FULLPATH1=$TEC_PATH$FILENAME1
+FULLPATH2=$TEC_PATH$FILENAME2 
+
+#bash syntax for ending an "if" statement section 
+fi
+
+#very easy to execute commands. Just like terminal. 
+./Full 1 $FULLPATH1
+./Full 2 $FULLPATH2
+
+#increment i
+i=$((i+1))
+
+# Boolean condition. There NEEDS to be space betwen '[' and '$i', and between 
+# 'E' and ']'
+if [ $i -eq $GETS_PER_FILE ]; then
+  cp $FULLPATH1 $FULLPATH1.copy
+  cp $FULLPATH2 $FULLPATH2.copy
+  bzip2 $FULLPATH1.copy
+  bzip2 $FULLPATH2.copy
+  FULLPATH1=$FULLPATH1.copy$BZIP
+  FULLPATH2=$FULLPATH2.copy$BZIP
+  FILENAME1=$FILENAME1$BZIP
+  FILENAME2=$FILENAME2$BZIP
+ 
+  #Create the directory if necessary
+  ssh $JEMEUSO@$DP_CPU mkdir -p $DP_CPU_TEMPPATH
+ 
+  #send the files to the dp-cpu
+  scp $FULLPATH1 $JEMEUSO@$DP_CPU:$DP_CPU_TEMPPATH/$FILENAME1
+  scp $FULLPATH2 $JEMEUSO@$DP_CPU:$DP_CPU_TEMPPATH/$FILENAME2
+
+  rm $FULLPATH1
+  rm $FULLPATH2  
+ 
+  ssh $JEMEUSO@$DP_CPU mkdir -p $DP_CPU_LOGPATH
+  ssh $JEMEUSO@$DP_CPU mv $DP_CPU_TEMPPATH $DP_CPU_LOGPATH
+
+  i=0
+fi
+
+#bash syntax for sleeping: $INTERVAL is in seconds. 
+sleep $INTERVAL
+done
